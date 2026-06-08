@@ -1,9 +1,0 @@
-using HomeLink.InCleanHome.API.ReviewsAndEvaluation.Domain.Model.Aggregates;
-using HomeLink.InCleanHome.API.ReviewsAndEvaluation.Domain.Model.Commands;
-
-namespace HomeLink.InCleanHome.API.ReviewsAndEvaluation.Domain.Services;
-
-public interface IReviewCommandService
-{
-    Task<Review?> Handle(CreateReviewCommand command);
-}

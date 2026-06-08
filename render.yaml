@@ -16,4 +16,34 @@ services:
       - key: TokenSettings__Secret
         generateValue: true
       - key: ASPNETCORE_ENVIRONMENT
-        value: Development
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      # ── Twilio (set manually in Render dashboard) ──
+      - key: Twilio__AccountSid
+        sync: false
+      - key: Twilio__AuthToken
+        sync: false
+      - key: Twilio__ApiKeySid
+        sync: false
+      - key: Twilio__ApiKeySecret
+        sync: false
+      - key: Twilio__ConversationServiceSid
+        sync: false
+      # ── Firebase (paste the full JSON of firebase-service-account.json) ──
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      # ── Auth0 ──
+      - key: Auth0__Enabled
+        value: "true"
+      - key: Auth0__Domain
+        value: incleanhome.us.auth0.com
+      - key: Auth0__Audience
+        value: https://incleanhome-api
+      - key: Auth0__ClientId
+        value: hM5v6Qxtal8pL7Hmn7Rb3zF92I8wphl5
+      # ── Admin seed ──
+      - key: ADMIN_EMAIL
+        value: admin@incleanhome.pe
+      - key: ADMIN_PASSWORD
+        sync: false

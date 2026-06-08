@@ -1,10 +1,47 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+# Rider ignored files
+/.idea.InCleanHome.Backend.iml
+/modules.xml
+/projectSettingsUpdater.xml
+/contentModel.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+
+
+# Build results
 bin/
 obj/
-.vs/
+
+# Visual Studio / Rider
+.vscode/
 .idea/
 *.user
+*.rsuser
 *.suo
-*.userosscache
 *.sln.docstates
-*.swp
+
+# Logs
+*.log
+logs/
+
+# Environment / secrets
+.env
+.env.*
+appsettings.Development.json
 appsettings.Local.json
+secrets.json
+firebase-service-account.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
