@@ -3,7 +3,8 @@ using InCleanHome.API.IAM.Domain.Model.Aggregates;
 using InCleanHome.API.Messaging.Domain.Model.Commands;
 using InCleanHome.API.Messaging.Domain.Model.Queries;
 using InCleanHome.API.Messaging.Domain.Services;
-using InCleanHome.API.Messaging.Infrastructure.ExternalServices;
+using InCleanHome.API.Messaging.Domain.Services.External;
+using InCleanHome.API.Messaging.Infrastructure.ExternalServices.Twilio;
 using InCleanHome.API.Messaging.Interfaces.REST.Resources;
 using InCleanHome.API.Messaging.Interfaces.REST.Transform;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +22,7 @@ namespace InCleanHome.API.Messaging.Interfaces.REST.Controllers;
 public class MessagesController(
     IMessageCommandService commandService,
     IMessageQueryService queryService,
-    ITwilioConversationsService twilioService) : ControllerBase
+    IRealtimeMessagingProvider messagingProvider) : ControllerBase
 {
     // ── Twilio Conversations endpoints ────────────────────────────────────────
 
@@ -37,7 +38,7 @@ public class MessagesController(
         if (current is null) return Unauthorized();
 
         var identity = $"user_{current.Id}";
-        var token = twilioService.GenerateAccessToken(identity);
+        var token = messagingProvider.GenerateAccessToken(identity);
 
         return Ok(new TwilioTokenResource(token, identity));
     }
@@ -58,7 +59,7 @@ public class MessagesController(
 
         try
         {
-            var conversationSid = await twilioService.GetOrCreateConversationSidAsync(
+            var conversationSid = await messagingProvider.GetOrCreateConversationSidAsync(
                 $"user_{current.Id}",
                 $"user_{userId}"
             );

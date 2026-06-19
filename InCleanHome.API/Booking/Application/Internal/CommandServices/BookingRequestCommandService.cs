@@ -10,6 +10,7 @@ using InCleanHome.API.Profiles.Domain.Model.Queries;
 using InCleanHome.API.Profiles.Domain.Services;
 using InCleanHome.API.Profiles.Interfaces.ACL;
 using InCleanHome.API.Shared.Domain.Repositories;
+using InCleanHome.API.Shared.Domain.Services;
 
 namespace InCleanHome.API.Booking.Application.Internal.CommandServices;
 
@@ -19,6 +20,7 @@ public class BookingRequestCommandService(
     IProfilesContextFacade profilesFacade,
     INotificationsContextFacade notificationsFacade,
     IIamContextFacade iamFacade,
+    ICommissionRateProvider commissionProvider,
     IUnitOfWork unitOfWork) : IBookingRequestCommandService
 {
     public async Task<BookingRequest> Handle(CreateBookingCommand c)
@@ -47,10 +49,23 @@ public class BookingRequestCommandService(
             throw new InvalidOperationException(
                 "No puedes reservar a esta hora, ya que otro cliente ya reservó a esta hora con este/esta trabajador(a). Por favor elige otro horario o fecha.");
 
+        // Selecciona la tarifa aplicable según el día de la semana. Si el booking
+        // cae domingo, usamos la tarifa especial declarada por la trabajadora.
+        // Esta decisión se toma server-side para que el cliente no pueda pasar
+        // un monto manipulado: el backend es la única fuente de verdad.
+        var rateForBooking = c.Date.DayOfWeek == DayOfWeek.Sunday
+            ? (worker.HourlyRateSunday > 0 ? worker.HourlyRateSunday : worker.HourlyRate)
+            : worker.HourlyRate;
+
+        // Lee la comisión actual desde PlatformSettings (con caché in-memory).
+        // El valor queda "snapshot" dentro del booking — no se recalcula si
+        // luego admin cambia la tasa.
+        var commissionRate = await commissionProvider.GetCurrentRateAsync();
+
         var booking = new BookingRequest(
-            c.ClientId, c.WorkerId, c.ServiceType, c.Date,
+            c.ClientId, c.WorkerId, c.ServiceTypes ?? new List<string>(), c.Date,
             c.StartTime, c.EndTime, c.Hours, c.PaymentMethodId,
-            c.Address, c.Notes ?? string.Empty, worker.HourlyRate);
+            c.Address, c.Notes ?? string.Empty, rateForBooking, commissionRate);
 
         await repository.AddAsync(booking);
         await unitOfWork.CompleteAsync();
@@ -168,7 +183,17 @@ public class BookingRequestCommandService(
         var worker = await workerQueryService.Handle(new GetWorkerProfileByUserIdQuery(booking.WorkerId))
             ?? throw new Exception("Worker not found");
 
-        booking.Reschedule(c.NewDate, c.NewStartTime, c.NewEndTime, c.NewHours, worker.HourlyRate);
+        // Misma regla que al crear: si la nueva fecha cae domingo, usa la tarifa
+        // de domingo de la trabajadora. La regla NO depende de la fecha original.
+        var rateForReschedule = c.NewDate.DayOfWeek == DayOfWeek.Sunday
+            ? (worker.HourlyRateSunday > 0 ? worker.HourlyRateSunday : worker.HourlyRate)
+            : worker.HourlyRate;
+
+        // En reschedule también leemos la comisión actual: si el booking se
+        // creó hace un mes con tasa antigua, el nuevo monto usa la tasa de hoy.
+        var rescheduleCommissionRate = await commissionProvider.GetCurrentRateAsync();
+        booking.Reschedule(c.NewDate, c.NewStartTime, c.NewEndTime, c.NewHours,
+                           rateForReschedule, rescheduleCommissionRate);
         repository.Update(booking);
         await unitOfWork.CompleteAsync();
 

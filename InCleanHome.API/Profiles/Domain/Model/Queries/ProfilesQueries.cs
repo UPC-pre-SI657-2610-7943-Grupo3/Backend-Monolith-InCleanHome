@@ -12,4 +12,8 @@ public record SearchWorkersQuery(
     int? MinAge,
     int? MaxAge,
     decimal? MaxHourlyRate,
-    decimal? MinRating);
+    decimal? MinRating,
+    // ServiceTypes: filtro multi-servicio con AND. Si trae elementos, el worker
+    // resultante DEBE ofrecer TODOS los servicios listados (no basta con uno).
+    // Se mantiene `ServiceType` (singular) para compatibilidad con clientes viejos.
+    List<string>? ServiceTypes = null);

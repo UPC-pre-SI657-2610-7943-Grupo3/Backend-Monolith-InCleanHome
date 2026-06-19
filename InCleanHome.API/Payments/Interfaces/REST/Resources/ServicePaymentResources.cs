@@ -3,9 +3,10 @@ namespace InCleanHome.API.Payments.Interfaces.REST.Resources;
 // ── Request bodies ───────────────────────────────────────────────────────────
 
 /// <summary>
-/// Body de POST /api/service-payments/booking/{id}/pay-manual.
-/// El channel debe ser yape|plin|bank_transfer|cash (NO izipay_card —
-/// ese va por el flujo Izipay).
+///     Body de <c>POST /api/service-payments/booking/{id}/pay-manual</c>.
+///     El channel debe ser <c>yape</c> | <c>plin</c> | <c>bank_transfer</c>.
+///     Para pagos vía Mercado Pago, el cliente usa el flujo del adapter
+///     (<c>POST /api/payments/mercadopago/preference</c>).
 /// </summary>
 public record PayBookingManualResource(string Channel);
 
@@ -23,7 +24,9 @@ public record ServicePaymentResource(
     string PayoutStatus,
     DateTimeOffset PaidAt,
     DateTimeOffset? PayoutCompletedAt,
-    string? IzipayOrderId);
+    // Solo presente cuando Channel = mercadopago. Útil para mostrar en la boleta
+    // y como referencia ante reclamos.
+    string? MercadoPagoPaymentId);
 
 public record WorkerBalanceResource(
     decimal TotalEarnings,

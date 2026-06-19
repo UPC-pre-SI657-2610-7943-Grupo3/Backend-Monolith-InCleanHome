@@ -9,18 +9,36 @@ namespace InCleanHome.API.Booking.Domain.Model.Aggregates;
 /// </summary>
 /// <remarks>
 ///     <c>ClientId</c> and <c>WorkerId</c> hold <em>user ids</em> (not profile ids), which is
-///     how the frontend addresses everyone (messaging, navigation). The platform fee is fixed
-///     at 10% (US-34/US-35) and is computed inside the aggregate so totals are consistent.
+///     how the frontend addresses everyone (messaging, navigation). The platform fee rate
+///     is read from <c>PlatformSettings</c> (admin-configurable) and passed in by the
+///     command service; the aggregate stores the resulting <c>PlatformFee</c> snapshot so
+///     totals stay stable even if admin later changes the rate.
 /// </remarks>
 public class BookingRequest : IEntityWithCreatedUpdatedDate
 {
-    public const decimal PlatformFeeRate = 0.10m;
-
     public int Id { get; private set; }
     public int ClientId { get; private set; }
     public int WorkerId { get; private set; }
 
+    /// <summary>
+    ///     Service types for this booking, persisted as a comma-separated string in
+    ///     the existing column (e.g. "limpieza_general,cuidado_ninos"). Stored this
+    ///     way to remain backward-compatible with single-service bookings created
+    ///     before multi-service was supported (a value like "limpieza_general"
+    ///     still parses correctly into a one-element list).
+    /// </summary>
     public string ServiceType { get; private set; } = string.Empty;
+
+    /// <summary>
+    ///     Parsed view of <see cref="ServiceType"/>. Read-only; mutate via the
+    ///     constructor or future setter helpers, never edit directly.
+    /// </summary>
+    [NotMapped]
+    public IReadOnlyList<string> ServiceTypesList =>
+        string.IsNullOrWhiteSpace(ServiceType)
+            ? Array.Empty<string>()
+            : ServiceType.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     public DateOnly Date { get; private set; }
     public string StartTime { get; private set; } = "00:00";
     public string EndTime { get; private set; }   = "00:00";
@@ -43,13 +61,18 @@ public class BookingRequest : IEntityWithCreatedUpdatedDate
     public BookingRequest() { }
 
     public BookingRequest(
-        int clientId, int workerId, string serviceType, DateOnly date,
+        int clientId, int workerId, IEnumerable<string> serviceTypes, DateOnly date,
         string startTime, string endTime, decimal hours, int paymentMethodId,
-        string address, string notes, decimal hourlyRate)
+        string address, string notes, decimal hourlyRate, decimal commissionRate)
     {
         ClientId        = clientId;
         WorkerId        = workerId;
-        ServiceType     = serviceType;
+        // Persist as comma-joined string. Defensive: filter empties, trim, dedupe
+        // preserving insertion order. Falls back to empty string if none.
+        ServiceType     = string.Join(",", (serviceTypes ?? Enumerable.Empty<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .Distinct());
         Date            = date;
         StartTime       = startTime;
         EndTime         = endTime;
@@ -59,7 +82,7 @@ public class BookingRequest : IEntityWithCreatedUpdatedDate
         Notes           = notes ?? string.Empty;
         HourlyRate      = hourlyRate;
         TotalAmount     = Math.Round(hourlyRate * hours, 2);
-        PlatformFee     = Math.Round(TotalAmount * PlatformFeeRate, 2);
+        PlatformFee     = Math.Round(TotalAmount * commissionRate, 2);
         WorkerEarning   = TotalAmount - PlatformFee;
         Status          = BookingStatus.Pending;
     }
@@ -138,7 +161,8 @@ public class BookingRequest : IEntityWithCreatedUpdatedDate
     ///     <c>Pending</c> para que la contraparte confirme el cambio.
     ///     Solo se puede reprogramar mientras esté pendiente o aceptada.
     /// </summary>
-    public BookingRequest Reschedule(DateOnly newDate, string newStart, string newEnd, decimal newHours, decimal hourlyRate)
+    public BookingRequest Reschedule(DateOnly newDate, string newStart, string newEnd,
+                                     decimal newHours, decimal hourlyRate, decimal commissionRate)
     {
         if (Status != BookingStatus.Pending && Status != BookingStatus.Accepted)
             throw new InvalidOperationException("Solo reservas pendientes o aceptadas pueden reprogramarse.");
@@ -152,7 +176,7 @@ public class BookingRequest : IEntityWithCreatedUpdatedDate
         EndTime       = newEnd;
         Hours         = newHours;
         TotalAmount   = Math.Round(hourlyRate * newHours, 2);
-        PlatformFee   = Math.Round(TotalAmount * 0.10m, 2);
+        PlatformFee   = Math.Round(TotalAmount * commissionRate, 2);
         WorkerEarning = TotalAmount - PlatformFee;
         // Vuelve a pending para que la contraparte confirme.
         Status = BookingStatus.Pending;

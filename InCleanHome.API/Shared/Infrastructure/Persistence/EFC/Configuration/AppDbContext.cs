@@ -5,9 +5,9 @@ using InCleanHome.API.Messaging.Domain.Model.Aggregates;
 using InCleanHome.API.Notifications.Domain.Model.Aggregates;
 using InCleanHome.API.Payments.Domain.Model.Aggregates;
 using InCleanHome.API.Profiles.Domain.Model.Aggregates;
-using InCleanHome.API.Reports.Domain.Model.Aggregates;
 using InCleanHome.API.ReviewsAndEvaluation.Domain.Model.Aggregates;
 using InCleanHome.API.SearchAndCatalog.Domain.Model.Aggregates;
+using InCleanHome.API.Shared.Domain.Model.Aggregates;
 using InCleanHome.API.Shared.Infrastructure.Persistence.EFC.Configuration.Extensions;
 using Microsoft.EntityFrameworkCore;
 
@@ -78,6 +78,9 @@ public class AppDbContext(DbContextOptions options) : DbContext(options)
         builder.Entity<WorkerProfile>().Property(w => w.Age);
         builder.Entity<WorkerProfile>().Property(w => w.Gender).HasMaxLength(20);
         builder.Entity<WorkerProfile>().Property(w => w.HourlyRate).HasPrecision(10, 2);
+        // Tarifa especial para servicios en domingo. La trabajadora la define
+        // obligatoriamente en el formulario de registro/edición de perfil.
+        builder.Entity<WorkerProfile>().Property(w => w.HourlyRateSunday).HasPrecision(10, 2);
         builder.Entity<WorkerProfile>().Property(w => w.ExperienceYears);
         builder.Entity<WorkerProfile>().Property(w => w.Bio).HasMaxLength(1000);
         builder.Entity<WorkerProfile>().Property(w => w.AverageRating).HasPrecision(3, 2);
@@ -142,10 +145,8 @@ public class AppDbContext(DbContextOptions options) : DbContext(options)
         builder.Entity<ServicePayment>().Property(s => s.WorkerEarning).HasColumnType("decimal(10,2)");
         builder.Entity<ServicePayment>().Property(s => s.Channel).IsRequired().HasMaxLength(30);
         builder.Entity<ServicePayment>().Property(s => s.PayoutStatus).IsRequired().HasMaxLength(20);
-        builder.Entity<ServicePayment>().Property(s => s.IzipayOrderId).HasMaxLength(100);
-        builder.Entity<ServicePayment>().Property(s => s.IzipayTransactionId).HasMaxLength(100);
-        builder.Entity<ServicePayment>().Property(s => s.PayPalOrderId).HasMaxLength(100);
-        builder.Entity<ServicePayment>().Property(s => s.PayPalCaptureId).HasMaxLength(100);
+        builder.Entity<ServicePayment>().Property(s => s.MercadoPagoPaymentId).HasMaxLength(100);
+        builder.Entity<ServicePayment>().Property(s => s.MercadoPagoPreferenceId).HasMaxLength(100);
         // Un booking solo puede pagarse una vez.
         builder.Entity<ServicePayment>().HasIndex(s => s.BookingId).IsUnique();
         builder.Entity<ServicePayment>().HasIndex(s => s.WorkerId);
@@ -197,6 +198,27 @@ public class AppDbContext(DbContextOptions options) : DbContext(options)
         builder.Entity<Report>().Property(r => r.AdminNotes).HasMaxLength(1000);
         builder.Entity<Report>().HasIndex(r => r.ReportedUserId);
         builder.Entity<Report>().HasIndex(r => new { r.ReportedUserId, r.Status });
+
+        // SuspensionAppeal: reclamo de un usuario contra su propia suspensión.
+        builder.Entity<SuspensionAppeal>().HasKey(a => a.Id);
+        builder.Entity<SuspensionAppeal>().Property(a => a.Id).IsRequired().ValueGeneratedOnAdd();
+        builder.Entity<SuspensionAppeal>().Property(a => a.UserId).IsRequired();
+        builder.Entity<SuspensionAppeal>().Property(a => a.Reason).IsRequired().HasMaxLength(2000);
+        builder.Entity<SuspensionAppeal>().Property(a => a.Status).IsRequired().HasMaxLength(20);
+        builder.Entity<SuspensionAppeal>().Property(a => a.ReviewedByAdminUserId);
+        builder.Entity<SuspensionAppeal>().Property(a => a.ReviewedAt);
+        builder.Entity<SuspensionAppeal>().Property(a => a.AdminResponse).HasMaxLength(1000);
+        // Índice frecuente: para encontrar el reclamo activo de un usuario, o
+        // listar pendientes en orden FIFO.
+        builder.Entity<SuspensionAppeal>().HasIndex(a => new { a.UserId, a.Status });
+        builder.Entity<SuspensionAppeal>().HasIndex(a => a.Status);
+
+        // F3: PlatformSettings — registro único (Id=1) con la configuración global.
+        builder.Entity<PlatformSettings>().HasKey(s => s.Id);
+        builder.Entity<PlatformSettings>().Property(s => s.Id).ValueGeneratedNever();
+        builder.Entity<PlatformSettings>().Property(s => s.CommissionRate)
+            .HasPrecision(5, 4).IsRequired();
+        builder.Entity<PlatformSettings>().Property(s => s.LastUpdatedByAdminUserId);
 
         // Apply snake_case for the entire model
         builder.UseSnakeCaseNamingConvention();

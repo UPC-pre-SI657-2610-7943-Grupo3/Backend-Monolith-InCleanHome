@@ -11,6 +11,7 @@ public record CreateWorkerProfileCommand(
     List<string> ServiceTypes,
     List<string> Zones,
     decimal HourlyRate,
+    decimal HourlyRateSunday,
     int ExperienceYears,
     string Bio);
 
@@ -24,6 +25,7 @@ public record UpdateWorkerProfileCommand(
     List<string> ServiceTypes,
     List<string> Zones,
     decimal HourlyRate,
+    decimal HourlyRateSunday,
     int ExperienceYears,
     string Bio);
 

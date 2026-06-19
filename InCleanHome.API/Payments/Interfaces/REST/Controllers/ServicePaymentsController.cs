@@ -20,11 +20,11 @@ namespace InCleanHome.API.Payments.Interfaces.REST.Controllers;
 ///         <item><description>GET  /api/service-payments/booking/{id} — saber si un booking está pagado</description></item>
 ///         <item><description>GET  /api/service-payments/worker/balance — stats del worker logueado</description></item>
 ///         <item><description>GET  /api/service-payments/worker — historial de pagos del worker</description></item>
-///         <item><description>POST /api/service-payments/worker/request-payout — worker solicita cobro de pagos Izipay pendientes</description></item>
+///         <item><description>POST /api/service-payments/worker/request-payout — worker solicita cobro de pagos pendientes</description></item>
 ///     </list>
 ///     El pago con tarjeta NO pasa por este controller — pasa por
-///     /api/payments/izipay/confirm-simulation que internamente crea el
-///     ServicePayment vía ConfirmIzipayPaymentCommand.
+///     /api/payments/mercadopago/confirm que internamente crea el
+///     ServicePayment vía ConfirmMercadoPagoPaymentCommand.
 /// </remarks>
 [ApiController]
 [Route("api/service-payments")]
@@ -37,7 +37,7 @@ public class ServicePaymentsController(
     [HttpPost("booking/{bookingId:int}/pay-manual")]
     [SwaggerOperation("Pay Booking (Manual Channel)",
         "Cliente registra el pago manual de un servicio completado: Yape/Plin/" +
-        "Bank/Cash. Para tarjeta, usar /api/payments/izipay/* en su lugar.")]
+        "Bank. Para Mercado Pago, usar /api/payments/mercadopago/* en su lugar (no por aquí en su lugar.")]
     public async Task<IActionResult> PayManual(int bookingId, [FromBody] PayBookingManualResource body)
     {
         var current = (User?)HttpContext.Items["User"];
@@ -107,9 +107,9 @@ public class ServicePaymentsController(
 
     [HttpPost("worker/request-payout")]
     [SwaggerOperation("Request Payout",
-        "Worker solicita el cobro de TODOS sus pagos Izipay pendientes. En esta " +
+        "Worker solicita el cobro de TODOS sus pagos pendientes. En esta " +
         "simulación el payout es instantáneo: marca todos como Completed sin " +
-        "transferir dinero real (las workers no tienen cuenta Izipay).")]
+        "transferir dinero real.")]
     public async Task<IActionResult> RequestPayout()
     {
         var current = (User?)HttpContext.Items["User"];

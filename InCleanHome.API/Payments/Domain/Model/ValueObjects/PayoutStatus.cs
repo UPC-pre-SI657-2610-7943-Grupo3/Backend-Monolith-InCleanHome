@@ -1,20 +1,22 @@
 namespace InCleanHome.API.Payments.Domain.Model.ValueObjects;
 
 /// <summary>
-/// Estado del payout (entrega del dinero al worker) de un pago Izipay.
-///
-/// Solo aplica a pagos por canal IzipayCard — el resto de canales tienen
-/// PayoutStatus = NotApplicable porque el worker ya cobró directamente
-/// del cliente sin pasar por la plataforma.
-///
-/// Flujo: NotApplicable | Pending → Completed
-///
-///   - NotApplicable: canal manual (Yape/Plin/Bank/Cash) — el worker ya tiene
-///     el dinero en su bolsillo (o lo tendrá en cuanto el cliente confirme).
-///   - Pending: canal IzipayCard — el dinero está en la cuenta de la plataforma
-///     (sandbox) y el worker tiene que pedir el cobro.
-///   - Completed: el worker pidió cobro y la plataforma "liberó" los fondos.
+///     Estado del payout (entrega del dinero a la trabajadora) de un pago.
 /// </summary>
+/// <remarks>
+///     <para>
+///     Hoy todos los canales arrancan en <c>Pending</c> y pasan a <c>Completed</c>
+///     cuando la trabajadora presiona "Solicitar cobro" desde su panel de pagos.
+///     <c>NotApplicable</c> queda como valor disponible por compatibilidad con
+///     pagos legacy creados antes de unificar el flujo de payout.
+///     </para>
+///     <para>
+///     Para canales manuales (Yape/Plin/Bank) la transición Pending → Completed
+///     es una confirmación de que la trabajadora recibió el dinero por fuera.
+///     Para Mercado Pago, simula la liberación de fondos retenidos en la
+///     cuenta de la plataforma.
+///     </para>
+/// </remarks>
 public static class PayoutStatus
 {
     public const string NotApplicable = "not_applicable";

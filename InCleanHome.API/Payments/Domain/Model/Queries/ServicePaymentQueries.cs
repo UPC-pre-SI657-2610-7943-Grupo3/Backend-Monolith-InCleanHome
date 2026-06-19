@@ -8,7 +8,7 @@ namespace InCleanHome.API.Payments.Domain.Model.Queries;
 ///
 /// GetWorkerBalance: devuelve las stats agregadas del worker — ganancias totales,
 ///   comisión cobrada por la plataforma, ganancias netas, pendiente de cobro
-///   (Izipay no liberado). Reemplaza la lógica de adjustedNetEarnings del front.
+///   (pago pendiente de cobro por la trabajadora). Reemplaza la lógica de adjustedNetEarnings del front.
 ///
 /// GetServicePaymentsByWorkerId: lista todos los payments del worker (para
 ///   detalle / historial de pagos).

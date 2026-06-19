@@ -7,7 +7,11 @@ public static class BookingResourceFromEntityAssembler
 {
     public static BookingResource ToResourceFromEntity(BookingRequest b, string clientName, string workerName,
         string? workerPhotoUrl = null, string? clientPhotoUrl = null, bool isPaid = false)
-        => new(
+    {
+        var services = b.ServiceTypesList.ToList();
+        // Backward compat: ServiceType expone el primer servicio (o "" si no hay).
+        var primary = services.FirstOrDefault() ?? string.Empty;
+        return new BookingResource(
             b.Id,
             b.ClientId,
             b.WorkerId,
@@ -15,7 +19,8 @@ public static class BookingResourceFromEntityAssembler
             workerName,
             workerPhotoUrl,
             clientPhotoUrl,
-            b.ServiceType,
+            primary,
+            services,
             b.Date.ToString("yyyy-MM-dd"),
             b.StartTime,
             b.EndTime,
@@ -30,4 +35,5 @@ public static class BookingResourceFromEntityAssembler
             b.Status,
             isPaid,
             b.CreatedDate);
+    }
 }

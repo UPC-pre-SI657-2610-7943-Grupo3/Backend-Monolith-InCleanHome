@@ -13,11 +13,12 @@ using InCleanHome.API.SearchAndCatalog.Domain.Model.Queries;
 using InCleanHome.API.SearchAndCatalog.Domain.Services;
 using InCleanHome.API.SearchAndCatalog.Interfaces.REST.Resources;
 using InCleanHome.API.SearchAndCatalog.Interfaces.REST.Transform;
+using InCleanHome.API.Payments.Domain.Repositories;
 using InCleanHome.API.Booking.Domain.Model.Queries;
 using InCleanHome.API.Booking.Domain.Model.ValueObjects;
 using InCleanHome.API.Booking.Domain.Services;
-using InCleanHome.API.Reports.Domain.Model.Queries;
-using InCleanHome.API.Reports.Domain.Services;
+using InCleanHome.API.ReviewsAndEvaluation.Domain.Model.Queries;
+using InCleanHome.API.ReviewsAndEvaluation.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 
@@ -49,12 +50,16 @@ public class WorkersController(
     IAvailabilitySlotQueryService availabilityQueryService,
     IAvailabilitySlotCommandService availabilityCommandService,
     IBookingRequestQueryService bookingQueryService,
-    IReportQueryService reportQueryService) : ControllerBase
+    IReportQueryService reportQueryService,
+    IServicePaymentRepository paymentRepository) : ControllerBase
 {
     [HttpGet]
     [SwaggerOperation("Search Workers", "Search workers with optional filters.")]
     public async Task<IActionResult> Search(
         [FromQuery] string? serviceType,
+        // serviceTypes: lista separada por comas, ej. "limpieza_general,cuidado_ninos".
+        // Si llega, el worker debe ofrecer TODOS los servicios listados (AND).
+        [FromQuery] string? serviceTypes,
         [FromQuery] string? zone,
         [FromQuery] string? gender,
         [FromQuery] int? minAge,
@@ -62,8 +67,13 @@ public class WorkersController(
         [FromQuery] decimal? maxHourlyRate,
         [FromQuery] decimal? minRating)
     {
+        // Parsea serviceTypes: si viene "a,b,c" lo convierte a lista limpia.
+        var serviceTypesList = !string.IsNullOrWhiteSpace(serviceTypes)
+            ? serviceTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+            : null;
+
         var workers = await workerQueryService.Handle(new SearchWorkersQuery(
-            serviceType, zone, gender, minAge, maxAge, maxHourlyRate, minRating));
+            serviceType, zone, gender, minAge, maxAge, maxHourlyRate, minRating, serviceTypesList));
 
         var resources = new List<WorkerResource>();
         foreach (var w in workers)
@@ -75,7 +85,13 @@ public class WorkersController(
             if (user.IsCurrentlySuspended()) continue;
             var documentsVerified = user?.DocumentsVerified ?? false;
             var confirmedReportsCount = await reportQueryService.Handle(new CountConfirmedReportsByReportedUserIdQuery(w.UserId));
-            resources.Add(WorkerResourceFromEntityAssembler.ToResourceFromEntity(w, documentsVerified, user?.SuspendedUntil, confirmedReportsCount));
+            // Calcula si la trabajadora tiene disponibilidad para domingo (DayOfWeek = 0).
+            // Si tiene al menos un slot Sunday=true, el frontend muestra la tarifa de
+            // domingo en la card; si no, la oculta.
+            var slots = await availabilityQueryService.Handle(new GetAvailabilityByWorkerUserIdQuery(w.UserId));
+            var worksSundays = slots.Any(s => s.DayOfWeek == 0 && s.IsAvailable);
+            resources.Add(WorkerResourceFromEntityAssembler.ToResourceFromEntity(
+                w, documentsVerified, user?.SuspendedUntil, confirmedReportsCount, worksSundays));
         }
         return Ok(resources);
     }
@@ -91,8 +107,10 @@ public class WorkersController(
         // We DO return suspended workers when fetched directly (the profile view
         // shows the suspension notice instead of letting them be contacted).
         var confirmedReportsCount = await reportQueryService.Handle(new CountConfirmedReportsByReportedUserIdQuery(id));
+        var slots = await availabilityQueryService.Handle(new GetAvailabilityByWorkerUserIdQuery(id));
+        var worksSundays = slots.Any(s => s.DayOfWeek == 0 && s.IsAvailable);
         return Ok(WorkerResourceFromEntityAssembler.ToResourceFromEntity(
-            worker, user?.DocumentsVerified ?? false, user?.SuspendedUntil, confirmedReportsCount));
+            worker, user?.DocumentsVerified ?? false, user?.SuspendedUntil, confirmedReportsCount, worksSundays));
     }
 
     // Availability 
@@ -163,6 +181,7 @@ public class WorkersController(
             resource.ServiceTypes ?? new(),
             resource.Zones ?? new(),
             resource.HourlyRate,
+            resource.HourlyRateSunday,
             resource.ExperienceYears,
             resource.Bio ?? string.Empty));
 
@@ -194,22 +213,37 @@ public class WorkersController(
         var bookings = (await bookingQueryService.Handle(new GetBookingsByWorkerUserIdQuery(current.Id))).ToList();
         var completed = bookings.Where(b => b.Status == BookingStatus.Completed).ToList();
 
-        var totalEarnings = completed.Sum(b => b.TotalAmount);
-        var platformFee   = Math.Round(totalEarnings * 0.10m, 2);
-        var netEarnings   = totalEarnings - platformFee;
+        // Solo los bookings que tienen un ServicePayment registrado son los
+        // que realmente generaron ganancia. Un servicio puede estar completado
+        // pero el cliente no haber pagado todavía — eso NO cuenta en stats.
+        // Tomamos los montos directamente del payment porque son históricos
+        // y auditables (si admin cambió la tasa de comisión después del pago,
+        // los pagos viejos mantienen su WorkerEarning original).
+        var paymentsList = (await paymentRepository.FindByWorkerIdAsync(current.Id)).ToList();
+        var paymentByBookingId = paymentsList.ToDictionary(p => p.BookingId);
+
+        var paidBookings = completed.Where(b => paymentByBookingId.ContainsKey(b.Id)).ToList();
+
+        var netEarnings = paidBookings.Sum(b => paymentByBookingId[b.Id].WorkerEarning);
+        var platformFee = paidBookings.Sum(b => paymentByBookingId[b.Id].PlatformFee);
 
         var profile = await workerQueryService.Handle(new GetWorkerProfileByUserIdQuery(current.Id));
 
-        var monthly = completed
+        // Agrupamos por la fecha del SERVICIO (cuándo se hizo el trabajo) y no
+        // por la fecha del pago. Para la trabajadora es más útil saber "en
+        // junio gané X" referido al mes en que trabajó.
+        var monthly = paidBookings
             .GroupBy(b => $"{b.Date.Year:D4}-{b.Date.Month:D2}")
             .OrderBy(g => g.Key)
-            .Select(g => new MonthlyEarning(g.Key, Math.Round(g.Sum(b => b.WorkerEarning), 2)))
+            .Select(g => new MonthlyEarning(g.Key,
+                Math.Round(g.Sum(b => paymentByBookingId[b.Id].WorkerEarning), 2)))
             .ToList();
 
         var stats = new WorkerStatsResource(
-            netEarnings,
-            platformFee,
-            completed.Count,
+            Math.Round(netEarnings, 2),
+            Math.Round(platformFee, 2),
+            // El count también: solo cuenta servicios que generaron ganancia real.
+            paidBookings.Count,
             profile?.AverageRating ?? 0m,
             monthly);
         return Ok(stats);

@@ -3,6 +3,7 @@ using InCleanHome.API.Notifications.Domain.Model.Aggregates;
 using InCleanHome.API.Notifications.Domain.Model.Commands;
 using InCleanHome.API.Notifications.Domain.Repositories;
 using InCleanHome.API.Notifications.Domain.Services;
+using InCleanHome.API.Notifications.Domain.Services.External;
 using InCleanHome.API.Shared.Domain.Repositories;
 
 namespace InCleanHome.API.Notifications.Application.Internal.CommandServices;
@@ -10,7 +11,7 @@ namespace InCleanHome.API.Notifications.Application.Internal.CommandServices;
 public class NotificationCommandService(
     INotificationRepository repository,
     IUnitOfWork unitOfWork,
-    IFirebaseMessagingService firebaseService,
+    IPushNotificationProvider pushProvider,
     IUserRepository userRepository) : INotificationCommandService // 🚀 Inyectamos Firebase + IUserRepository
 {
     public async Task<Notification> Handle(CreateNotificationCommand c)
@@ -44,7 +45,7 @@ public class NotificationCommandService(
                 Console.WriteLine($"[Notifications] Calling Firebase SendNotificationAsync for userId={c.UserId}...");
 
                 // Despachamos la notificación push directo a los servidores de Firebase
-                await firebaseService.SendNotificationAsync(userDeviceToken, c.Title, c.Body, extraData);
+                await pushProvider.SendNotificationAsync(userDeviceToken, c.Title, c.Body, extraData);
             }
             catch (Exception ex)
             {

@@ -11,6 +11,6 @@ public interface IServicePaymentRepository : IBaseRepository<ServicePayment>
     /// <summary>Todos los pagos hechos a una worker, ordenados desc por fecha.</summary>
     Task<IEnumerable<ServicePayment>> FindByWorkerIdAsync(int workerId);
 
-    /// <summary>Solo los pagos en estado Pending (Izipay no cobrado) de la worker.</summary>
+    /// <summary>Solo los pagos en estado Pending (pendientes de cobro) de la worker.</summary>
     Task<IEnumerable<ServicePayment>> FindPendingPayoutsByWorkerIdAsync(int workerId);
 }

@@ -14,6 +14,7 @@ public record RegisterWorkerResource(
     List<string> ServiceTypes,
     List<string> Zones,
     decimal HourlyRate,
+    decimal HourlyRateSunday,
     int ExperienceYears,
     string? Bio);
 
@@ -43,6 +44,7 @@ public record WorkerResource(
     List<string> ServiceTypes,
     List<string> Zones,
     decimal HourlyRate,
+    decimal HourlyRateSunday,
     int ExperienceYears,
     string Bio,
     decimal AverageRating,
@@ -51,7 +53,11 @@ public record WorkerResource(
     string? PhotoUrl,
     DateTimeOffset? SuspendedUntil,
     bool HasConfirmedReports,
-    int ConfirmedReportsCount);
+    int ConfirmedReportsCount,
+    // Flag derivado: true si la trabajadora tiene al menos un AvailabilitySlot
+    // configurado para domingo. Lo usa el frontend para decidir si mostrar la
+    // tarifa de domingo en la card y para habilitar/bloquear el calendario.
+    bool WorksSundays);
 
 public record UpdateWorkerProfileResource(
     string Name,
@@ -59,6 +65,7 @@ public record UpdateWorkerProfileResource(
     int Age,
     int ExperienceYears,
     decimal HourlyRate,
+    decimal HourlyRateSunday,
     List<string> ServiceTypes,
     List<string> Zones,
     string? Bio);

@@ -3,7 +3,7 @@ namespace InCleanHome.API.Booking.Domain.Model.Commands;
 public record CreateBookingCommand(
     int ClientId,
     int WorkerId,
-    string ServiceType,
+    List<string> ServiceTypes,
     DateOnly Date,
     string StartTime,
     string EndTime,

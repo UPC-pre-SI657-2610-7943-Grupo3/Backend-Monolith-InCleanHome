@@ -10,7 +10,12 @@ public static class WorkerResourceFromEntityAssembler
     ///     The frontend identifies a worker by user id (used for /worker/{id} links and
     ///     messaging routes), not by WorkerProfile.Id, so we expose <c>UserId</c> as <c>id</c>.
     /// </summary>
-    public static WorkerResource ToResourceFromEntity(WorkerProfile w, bool documentsVerified, DateTimeOffset? suspendedUntil = null, int confirmedReportsCount = 0)
+    public static WorkerResource ToResourceFromEntity(
+        WorkerProfile w,
+        bool documentsVerified,
+        DateTimeOffset? suspendedUntil = null,
+        int confirmedReportsCount = 0,
+        bool worksSundays = false)
         => new(
             w.UserId,
             w.Name,
@@ -20,6 +25,7 @@ public static class WorkerResourceFromEntityAssembler
             w.ServiceTypes,
             w.Zones,
             w.HourlyRate,
+            w.HourlyRateSunday,
             w.ExperienceYears,
             w.Bio,
             w.AverageRating,
@@ -28,7 +34,8 @@ public static class WorkerResourceFromEntityAssembler
             w.PhotoUrl,
             suspendedUntil,
             confirmedReportsCount > 0,
-            confirmedReportsCount);
+            confirmedReportsCount,
+            worksSundays);
 }
 
 public static class UserPayloadFromEntityAssembler

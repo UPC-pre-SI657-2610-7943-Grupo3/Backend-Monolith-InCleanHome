@@ -8,18 +8,18 @@ namespace InCleanHome.API.Payments.Domain.Model.Aggregates;
 ///     ServicePayment aggregate root — registra el pago de un servicio completado.
 /// </summary>
 /// <remarks>
-///     A diferencia de <see cref="PaymentMethod"/> (que solo registra qué método
-///     usaría el cliente), <see cref="ServicePayment"/> registra que el pago
-///     EFECTIVAMENTE OCURRIÓ. Hay un único ServicePayment por BookingRequest
-///     (asumimos que un servicio solo se paga una vez).
-///
-///     <para>Modelo de datos:</para>
+///     <para>
+///     Un único ServicePayment por <see cref="Booking.Domain.Model.Aggregates.BookingRequest"/>
+///     (un servicio se paga una sola vez).
+///     </para>
+///     <para>Campos clave:</para>
 ///     <list type="bullet">
 ///         <item><description><c>Amount</c>: monto total del servicio (= BookingRequest.TotalAmount).</description></item>
-///         <item><description><c>PlatformFee</c>: 10% del amount, excepto para canal <c>cash</c>.</description></item>
-///         <item><description><c>WorkerEarning</c>: lo que le corresponde al worker (Amount - PlatformFee).</description></item>
-///         <item><description><c>Channel</c>: canal usado (izipay_card | yape | plin | bank_transfer | cash).</description></item>
-///         <item><description><c>PayoutStatus</c>: solo relevante para izipay_card (el resto = NotApplicable).</description></item>
+///         <item><description><c>PlatformFee</c>: 10% del amount (la comisión es la misma para todos los canales).</description></item>
+///         <item><description><c>WorkerEarning</c>: Amount - PlatformFee.</description></item>
+///         <item><description><c>Channel</c>: mercadopago | yape | plin | bank_transfer.</description></item>
+///         <item><description><c>PayoutStatus</c>: Pending al crearse; Completed al solicitar cobro la trabajadora.</description></item>
+///         <item><description><c>MercadoPagoPaymentId</c> / <c>MercadoPagoPreferenceId</c>: solo cuando Channel = mercadopago.</description></item>
 ///     </list>
 /// </remarks>
 public class ServicePayment : IEntityWithCreatedUpdatedDate
@@ -33,20 +33,25 @@ public class ServicePayment : IEntityWithCreatedUpdatedDate
     public decimal PlatformFee   { get; private set; }
     public decimal WorkerEarning { get; private set; }
 
-    public string Channel      { get; private set; } = PaymentChannel.Cash;
+    public string Channel      { get; private set; } = PaymentChannel.Yape;
     public string PayoutStatus { get; private set; } = ValueObjects.PayoutStatus.NotApplicable;
 
     public DateTimeOffset PaidAt { get; private set; }
     public DateTimeOffset? PayoutRequestedAt { get; private set; }
     public DateTimeOffset? PayoutCompletedAt { get; private set; }
 
-    // Solo aplica a izipay_card. Lo guardamos para el comprobante.
-    public string? IzipayOrderId { get; private set; }
-    public string? IzipayTransactionId { get; private set; }
+    /// <summary>
+    ///     ID del pago en Mercado Pago (devuelto por la API tras la transacción).
+    ///     Solo presente cuando <c>Channel = mercadopago</c>. Lo persistimos para
+    ///     consultar estado, mostrar en boleta y auditoría.
+    /// </summary>
+    public string? MercadoPagoPaymentId { get; private set; }
 
-    // Solo aplica a paypal. Lo guardamos para el comprobante / auditoría.
-    public string? PayPalOrderId { get; private set; }
-    public string? PayPalCaptureId { get; private set; }
+    /// <summary>
+    ///     ID de la preferencia de Mercado Pago creada para iniciar el pago.
+    ///     También se persiste para trazabilidad ante reclamos o investigación.
+    /// </summary>
+    public string? MercadoPagoPreferenceId { get; private set; }
 
     [Column("CreatedAt")] public DateTimeOffset? CreatedDate { get; set; }
     [Column("UpdatedAt")] public DateTimeOffset? UpdatedDate { get; set; }
@@ -54,18 +59,25 @@ public class ServicePayment : IEntityWithCreatedUpdatedDate
     public ServicePayment() { }
 
     /// <summary>
-    /// Crea un pago de servicio. La comisión se calcula automáticamente según
-    /// el canal: cash = 0, todo lo demás = 10%.
+    ///     Crea un pago de servicio aplicando la tasa de comisión recibida.
     /// </summary>
+    /// <remarks>
+    ///     La tasa se inyecta como parámetro (no se hardcodea) porque vive en
+    ///     el aggregate <c>PlatformSettings</c> y la lee el caller (command
+    ///     service) usando <c>ICommissionRateProvider</c>. El valor efectivo
+    ///     queda persistido implícitamente vía <c>PlatformFee</c>.
+    /// </remarks>
     public ServicePayment(int bookingId, int clientId, int workerId, decimal amount,
-        string channel,
-        string? izipayOrderId = null, string? izipayTransactionId = null,
-        string? paypalOrderId = null, string? paypalCaptureId = null)
+        string channel, decimal commissionRate,
+        string? mercadoPagoPaymentId = null,
+        string? mercadoPagoPreferenceId = null)
     {
         if (!PaymentChannel.IsValid(channel))
             throw new ArgumentException($"Invalid payment channel: {channel}");
         if (amount <= 0)
             throw new ArgumentException("Amount must be positive");
+        if (commissionRate < 0m || commissionRate > 1m)
+            throw new ArgumentException("commissionRate must be between 0 and 1");
 
         BookingId = bookingId;
         ClientId  = clientId;
@@ -73,42 +85,30 @@ public class ServicePayment : IEntityWithCreatedUpdatedDate
         Amount    = amount;
         Channel   = channel;
 
-        // Comisión 10% para todos los canales excepto cash.
-        if (PaymentChannel.ChargesPlatformFee(channel))
-        {
-            PlatformFee   = Math.Round(amount * 0.10m, 2);
-            WorkerEarning = amount - PlatformFee;
-        }
-        else
-        {
-            PlatformFee   = 0m;
-            WorkerEarning = amount;
-        }
+        PlatformFee   = Math.Round(amount * commissionRate, 2);
+        WorkerEarning = amount - PlatformFee;
 
-        // TODOS los canales entran como "Pending" para que la trabajadora pueda
-        // presionar "Solicitar cobro" desde /worker/payments, sin importar si el
-        // pago fue por pasarela (Izipay/PayPal) o manual (Yape, Plin, transferencia,
-        // efectivo). Para los canales manuales el botón funciona como confirmación
-        // de recepción ("el cliente ya me pagó por fuera"); para los canales con
-        // pasarela funciona como liberación de fondos en la simulación.
+        // Todos los canales arrancan Pending: la trabajadora luego solicita cobro
+        // ("Solicitar cobro" desde /worker/payments). Para Mercado Pago esto libera
+        // los fondos simulados; para canales manuales funciona como confirmación
+        // de "el cliente ya me pagó por fuera".
         PayoutStatus = ValueObjects.PayoutStatus.Pending;
 
         PaidAt = DateTimeOffset.UtcNow;
-        IzipayOrderId = izipayOrderId;
-        IzipayTransactionId = izipayTransactionId;
-        PayPalOrderId = paypalOrderId;
-        PayPalCaptureId = paypalCaptureId;
+        MercadoPagoPaymentId    = mercadoPagoPaymentId;
+        MercadoPagoPreferenceId = mercadoPagoPreferenceId;
     }
 
     /// <summary>
-    /// El worker pidió cobrar este pago (solo aplica a canales con pasarela).
+    ///     El worker pidió cobrar este pago. Idempotente: si ya está completed o
+    ///     not_applicable, no hace nada.
     /// </summary>
     public void MarkPayoutRequested()
     {
         if (PayoutStatus != ValueObjects.PayoutStatus.Pending)
-            return; // idempotente: si ya está completed o not_applicable, no hace nada
+            return;
         PayoutRequestedAt = DateTimeOffset.UtcNow;
-        PayoutCompletedAt = DateTimeOffset.UtcNow; // en simulación es instantáneo
+        PayoutCompletedAt = DateTimeOffset.UtcNow; // simulación instantánea
         PayoutStatus      = ValueObjects.PayoutStatus.Completed;
     }
 }

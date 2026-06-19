@@ -8,6 +8,7 @@ using InCleanHome.API.Payments.Domain.Repositories;
 using InCleanHome.API.Payments.Domain.Services;
 using InCleanHome.API.Profiles.Interfaces.ACL;
 using InCleanHome.API.Shared.Domain.Repositories;
+using InCleanHome.API.Shared.Domain.Services;
 
 namespace InCleanHome.API.Payments.Application.Internal.CommandServices;
 
@@ -16,12 +17,13 @@ public class ServicePaymentCommandService(
     IBookingRequestRepository bookingRepository,
     IUnitOfWork unitOfWork,
     INotificationsContextFacade notificationsFacade,
-    IProfilesContextFacade profilesFacade) : IServicePaymentCommandService
+    IProfilesContextFacade profilesFacade,
+    ICommissionRateProvider commissionProvider) : IServicePaymentCommandService
 {
     /// <summary>
-    /// Notifica al trabajador que un servicio suyo acaba de ser pagado por el cliente.
-    /// Se llama después de crear la fila ServicePayment, envuelto en try/catch para que
-    /// si la notificación falla NO se revierta el pago ya guardado.
+    ///     Notifica a la trabajadora que un servicio suyo acaba de ser pagado.
+    ///     Best-effort: si la notificación falla NO se revierta el pago ya
+    ///     guardado en BD.
     /// </summary>
     private async Task NotifyWorkerOfPaymentAsync(ServicePayment payment)
     {
@@ -39,38 +41,43 @@ public class ServicePaymentCommandService(
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Payments] Could not create payment notification: {ex.Message}");
+            // best-effort: log y seguimos. El pago ya está persistido.
+            Console.WriteLine($"[Payments] Notificación de pago no enviada: {ex.Message}");
         }
     }
 
     public async Task<ServicePayment> Handle(PayBookingCommand c)
     {
         if (!PaymentChannel.IsValid(c.Channel))
-            throw new Exception("Invalid payment channel");
+            throw new InvalidOperationException("Invalid payment channel");
 
-        // El cliente no debería poder usar este endpoint para pagar con tarjeta o
-        // PayPal — esos canales van por sus respectivos controllers de pasarela.
-        if (c.Channel == PaymentChannel.IzipayCard)
-            throw new Exception("Use Izipay flow for card payments");
-        if (c.Channel == PaymentChannel.PayPal)
-            throw new Exception("Use PayPal flow for PayPal payments");
+        // Los canales con pasarela van por su propio flujo (MercadoPago tiene
+        // su confirmación dedicada). Este endpoint es solo para canales manuales.
+        if (c.Channel == PaymentChannel.MercadoPago)
+            throw new InvalidOperationException(
+                "Use the Mercado Pago flow for gateway payments (POST /api/payments/mercadopago/...).");
 
         var booking = await bookingRepository.FindByIdAsync(c.BookingId)
-            ?? throw new Exception("Booking not found");
+            ?? throw new InvalidOperationException("Booking not found");
 
         if (booking.ClientId != c.ClientId)
-            throw new Exception("This booking does not belong to you");
+            throw new InvalidOperationException("This booking does not belong to you");
 
         if (booking.Status != BookingStatus.Completed)
-            throw new Exception("Booking must be completed before payment");
+            throw new InvalidOperationException("Booking must be completed before payment");
 
         var existing = await repository.FindByBookingIdAsync(c.BookingId);
         if (existing is not null)
-            throw new Exception("This booking has already been paid");
+            throw new InvalidOperationException("This booking has already been paid");
+
+        // Lee la comisión vigente al momento del pago (cacheada in-memory).
+        // El valor queda implícito en PlatformFee / WorkerEarning del aggregate
+        // y NO se recalcula si admin cambia la tasa después.
+        var commissionRate = await commissionProvider.GetCurrentRateAsync();
 
         var payment = new ServicePayment(
             booking.Id, booking.ClientId, booking.WorkerId,
-            booking.TotalAmount, c.Channel);
+            booking.TotalAmount, c.Channel, commissionRate);
 
         await repository.AddAsync(payment);
         await unitOfWork.CompleteAsync();
@@ -79,52 +86,28 @@ public class ServicePaymentCommandService(
         return payment;
     }
 
-    public async Task<ServicePayment> Handle(ConfirmIzipayPaymentCommand c)
+    public async Task<ServicePayment> Handle(ConfirmMercadoPagoPaymentCommand c)
     {
         var booking = await bookingRepository.FindByIdAsync(c.BookingId)
-            ?? throw new Exception("Booking not found");
+            ?? throw new InvalidOperationException("Booking not found");
 
         if (booking.ClientId != c.ClientId)
-            throw new Exception("This booking does not belong to you");
+            throw new InvalidOperationException("This booking does not belong to you");
 
         if (booking.Status != BookingStatus.Completed)
-            throw new Exception("Booking must be completed before payment");
+            throw new InvalidOperationException("Booking must be completed before payment");
 
         var existing = await repository.FindByBookingIdAsync(c.BookingId);
         if (existing is not null)
-            throw new Exception("This booking has already been paid");
+            throw new InvalidOperationException("This booking has already been paid");
+
+        var commissionRate = await commissionProvider.GetCurrentRateAsync();
 
         var payment = new ServicePayment(
             booking.Id, booking.ClientId, booking.WorkerId,
-            booking.TotalAmount, PaymentChannel.IzipayCard,
-            izipayOrderId: c.IzipayOrderId, izipayTransactionId: c.IzipayTransactionId);
-
-        await repository.AddAsync(payment);
-        await unitOfWork.CompleteAsync();
-
-        await NotifyWorkerOfPaymentAsync(payment);
-        return payment;
-    }
-
-    public async Task<ServicePayment> Handle(ConfirmPayPalPaymentCommand c)
-    {
-        var booking = await bookingRepository.FindByIdAsync(c.BookingId)
-            ?? throw new Exception("Booking not found");
-
-        if (booking.ClientId != c.ClientId)
-            throw new Exception("This booking does not belong to you");
-
-        if (booking.Status != BookingStatus.Completed)
-            throw new Exception("Booking must be completed before payment");
-
-        var existing = await repository.FindByBookingIdAsync(c.BookingId);
-        if (existing is not null)
-            throw new Exception("This booking has already been paid");
-
-        var payment = new ServicePayment(
-            booking.Id, booking.ClientId, booking.WorkerId,
-            booking.TotalAmount, PaymentChannel.PayPal,
-            paypalOrderId: c.PayPalOrderId, paypalCaptureId: c.PayPalCaptureId);
+            booking.TotalAmount, PaymentChannel.MercadoPago, commissionRate,
+            mercadoPagoPaymentId:    c.MercadoPagoPaymentId,
+            mercadoPagoPreferenceId: c.MercadoPagoPreferenceId);
 
         await repository.AddAsync(payment);
         await unitOfWork.CompleteAsync();

@@ -3,6 +3,7 @@ using InCleanHome.API.IAM.Domain.Model.Aggregates;
 using InCleanHome.API.Notifications.Domain.Model.Commands;
 using InCleanHome.API.Notifications.Domain.Model.Queries;
 using InCleanHome.API.Notifications.Domain.Services;
+using InCleanHome.API.Notifications.Domain.Services.External;
 using InCleanHome.API.Notifications.Interfaces.REST.Resources;
 using InCleanHome.API.Notifications.Interfaces.REST.Transform;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,7 @@ namespace InCleanHome.API.Notifications.Interfaces.REST.Controllers;
 public class NotificationsController(
     INotificationCommandService commandService,
     INotificationQueryService queryService,
-    IFirebaseMessagingService firebaseService) : ControllerBase
+    IPushNotificationProvider pushProvider) : ControllerBase
 {
     [HttpGet]
     [SwaggerOperation("List Notifications", "Returns the current user's notifications, newest first.")]
@@ -98,8 +99,8 @@ public class NotificationsController(
     {
         try
         {
-            // Mapeado directamente al parámetro del constructor primario: firebaseService
-            var messageId = await firebaseService.SendNotificationAsync(
+            // Mapeado directamente al parámetro del constructor primario: pushProvider
+            var messageId = await pushProvider.SendNotificationAsync(
                 deviceToken: token,
                 title: "¡Prueba de Conexión Exitosa!",
                 body: "Si estás leyendo esto, tu backend de .NET y Firebase están perfectamente integrados."

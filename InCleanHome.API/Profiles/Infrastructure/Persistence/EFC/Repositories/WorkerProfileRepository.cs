@@ -17,8 +17,23 @@ public class WorkerProfileRepository(AppDbContext context)
     {
         var query = Context.Set<WorkerProfile>().AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(f.ServiceType))
+        // Filtro multi-servicio (AND): el worker debe ofrecer TODOS los servicios
+        // seleccionados. Se traduce a una cadena de Where(Contains), cada uno
+        // independiente, lo que EFC mapea a operadores de PostgreSQL sobre el
+        // text[] (ANY/ALL). Si no se pasaron ServiceTypes, se cae al filtro legacy
+        // ServiceType (singular) para no romper clientes viejos.
+        if (f.ServiceTypes is { Count: > 0 })
+        {
+            foreach (var st in f.ServiceTypes.Where(s => !string.IsNullOrWhiteSpace(s)))
+            {
+                var svc = st; // captura por valor para la expresión.
+                query = query.Where(w => w.ServiceTypes.Contains(svc));
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(f.ServiceType))
+        {
             query = query.Where(w => w.ServiceTypes.Contains(f.ServiceType));
+        }
 
         if (!string.IsNullOrWhiteSpace(f.Zone))
             query = query.Where(w => w.Zones.Contains(f.Zone));

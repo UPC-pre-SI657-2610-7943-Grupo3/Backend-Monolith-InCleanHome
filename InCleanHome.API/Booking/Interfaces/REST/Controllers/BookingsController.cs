@@ -52,8 +52,20 @@ public class BookingsController(
 
         try
         {
+            // Resuelve la lista de servicios: prioriza el nuevo campo `ServiceTypes`
+            // (multi-servicio); si viene vacío/null, cae al legacy `ServiceType`
+            // singular para no romper integraciones viejas.
+            var services = resource.ServiceTypes is { Count: > 0 }
+                ? resource.ServiceTypes
+                : (!string.IsNullOrWhiteSpace(resource.ServiceType)
+                    ? new List<string> { resource.ServiceType }
+                    : new List<string>());
+
+            if (services.Count == 0)
+                return BadRequest(new { error = "Debes seleccionar al menos un tipo de servicio." });
+
             var booking = await commandService.Handle(new CreateBookingCommand(
-                current.Id, resource.WorkerId, resource.ServiceType, date,
+                current.Id, resource.WorkerId, services, date,
                 resource.StartTime, resource.EndTime, resource.Hours, resource.PaymentMethodId,
                 resource.Address, resource.Notes));
 
@@ -92,7 +104,7 @@ public class BookingsController(
             var clientPhoto = await profilesFacade.FetchClientPhotoByUserId(b.ClientId);
             // A booking is "paid" once a ServicePayment row exists for it.
             // ServicePayment is created when the client confirms payment (Yape, Plin,
-            // cash, bank transfer, Izipay card, or PayPal). So existence == paid.
+            // yape, plin, bank transfer, mercadopago). So existence == paid.
             var payment = await servicePaymentRepository.FindByBookingIdAsync(b.Id);
             var isPaid = payment is not null;
             result.Add(BookingResourceFromEntityAssembler.ToResourceFromEntity(b, clientName, workerName, workerPhoto, clientPhoto, isPaid));

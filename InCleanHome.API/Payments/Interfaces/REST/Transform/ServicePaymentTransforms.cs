@@ -17,8 +17,8 @@ public static class ServicePaymentResourceFromEntityAssembler
         Channel:           p.Channel,
         PayoutStatus:      p.PayoutStatus,
         PaidAt:            p.PaidAt,
-        PayoutCompletedAt: p.PayoutCompletedAt,
-        IzipayOrderId:     p.IzipayOrderId);
+        PayoutCompletedAt:    p.PayoutCompletedAt,
+        MercadoPagoPaymentId: p.MercadoPagoPaymentId);
 }
 
 public static class WorkerBalanceResourceFromResultAssembler

@@ -14,7 +14,8 @@ public class WorkerProfileCommandService(
     {
         var profile = new WorkerProfile(
             c.UserId, c.Name, c.Phone, c.Age, c.Gender,
-            c.ServiceTypes, c.Zones, c.HourlyRate, c.ExperienceYears, c.Bio);
+            c.ServiceTypes, c.Zones, c.HourlyRate, c.HourlyRateSunday,
+            c.ExperienceYears, c.Bio);
         await repository.AddAsync(profile);
         await unitOfWork.CompleteAsync();
         return profile;
@@ -24,7 +25,9 @@ public class WorkerProfileCommandService(
     {
         var profile = await repository.FindByUserIdAsync(c.UserId);
         if (profile == null) return null;
-        profile.Update(c.Name, c.Phone, c.Age, c.ServiceTypes, c.Zones, c.HourlyRate, c.ExperienceYears, c.Bio);
+        profile.Update(c.Name, c.Phone, c.Age, c.ServiceTypes, c.Zones,
+                        c.HourlyRate, c.HourlyRateSunday,
+                        c.ExperienceYears, c.Bio);
         repository.Update(profile);
         await unitOfWork.CompleteAsync();
         return profile;

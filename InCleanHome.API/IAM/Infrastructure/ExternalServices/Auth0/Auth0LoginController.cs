@@ -3,6 +3,7 @@ using InCleanHome.API.IAM.Application.Internal.OutboundServices;
 using InCleanHome.API.IAM.Domain.Model.Aggregates;
 using InCleanHome.API.IAM.Domain.Model.ValueObjects;
 using InCleanHome.API.IAM.Domain.Repositories;
+using InCleanHome.API.IAM.Domain.Services.External;
 using InCleanHome.API.IAM.Infrastructure.Pipeline.Middleware.Attributes;
 using InCleanHome.API.Profiles.Domain.Model.Commands;
 using InCleanHome.API.Profiles.Domain.Model.Queries;
@@ -37,7 +38,7 @@ namespace InCleanHome.API.IAM.Infrastructure.ExternalServices.Auth0;
 [Produces(MediaTypeNames.Application.Json)]
 [SwaggerTag("Auth0 — login con proveedor externo de identidad")]
 public class Auth0LoginController(
-    IAuth0Service auth0Service,
+    IIdentityProvider identityProvider,
     IUserRepository userRepository,
     ITokenService tokenService,
     IClientProfileCommandService clientProfileCommandService,
@@ -68,6 +69,7 @@ public class Auth0LoginController(
         List<string>? ServiceTypes,
         List<string>? Zones,
         decimal? HourlyRate,
+        decimal? HourlyRateSunday,
         int? ExperienceYears,
         string? Bio);
 
@@ -76,7 +78,7 @@ public class Auth0LoginController(
     [SwaggerOperation("Auth0 Status",
         "Devuelve si Auth0 está habilitado en este backend.")]
     public IActionResult Status()
-        => Ok(new { enabled = auth0Service.IsEnabled });
+        => Ok(new { enabled = identityProvider.IsEnabled });
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -86,13 +88,13 @@ public class Auth0LoginController(
         "needsRoleSelection=true para que el frontend pase a /welcome.")]
     public async Task<IActionResult> Login([FromBody] Auth0LoginRequest body)
     {
-        if (!auth0Service.IsEnabled)
+        if (!identityProvider.IsEnabled)
             return StatusCode(503, new { error = "Auth0 is not enabled on this backend" });
 
         if (string.IsNullOrWhiteSpace(body?.AccessToken))
             return BadRequest(new { error = "accessToken is required" });
 
-        var info = await auth0Service.ValidateAndGetUserInfoAsync(body.AccessToken);
+        var info = await identityProvider.ValidateAndGetUserInfoAsync(body.AccessToken);
         if (info is null)
             return Unauthorized(new { error = "Invalid Auth0 token" });
 
@@ -119,7 +121,7 @@ public class Auth0LoginController(
                 needsRoleSelection = true,
                 email = info.Email,
                 name = info.Name,
-                picture = info.Picture
+                picture = info.PictureUrl
             });
         }
 
@@ -135,7 +137,7 @@ public class Auth0LoginController(
         "rol y el perfil completo. Workers quedan pendientes de subir documentos.")]
     public async Task<IActionResult> CompleteRegistration([FromBody] Auth0CompleteRegistrationRequest body)
     {
-        if (!auth0Service.IsEnabled)
+        if (!identityProvider.IsEnabled)
             return StatusCode(503, new { error = "Auth0 is not enabled on this backend" });
 
         if (string.IsNullOrWhiteSpace(body?.AccessToken))
@@ -167,7 +169,7 @@ public class Auth0LoginController(
         }
 
         // Validar token Auth0.
-        var info = await auth0Service.ValidateAndGetUserInfoAsync(body.AccessToken);
+        var info = await identityProvider.ValidateAndGetUserInfoAsync(body.AccessToken);
         if (info is null)
             return Unauthorized(new { error = "Invalid Auth0 token" });
 
@@ -207,6 +209,10 @@ public class Auth0LoginController(
                 body.ServiceTypes!,
                 body.Zones ?? new List<string>(),
                 body.HourlyRate!.Value,
+                // Fallback defensivo: si por alguna razón el frontend no manda la
+                // tarifa de domingo, usamos la normal. El form la marca como
+                // obligatoria, así que esto solo cubre clientes legacy.
+                body.HourlyRateSunday ?? body.HourlyRate!.Value,
                 body.ExperienceYears ?? 0,
                 body.Bio ?? string.Empty));
         }

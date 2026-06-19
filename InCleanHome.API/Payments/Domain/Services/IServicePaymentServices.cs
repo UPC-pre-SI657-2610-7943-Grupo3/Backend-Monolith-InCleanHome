@@ -6,14 +6,14 @@ namespace InCleanHome.API.Payments.Domain.Services;
 
 public interface IServicePaymentCommandService
 {
-    /// <summary>Registra un pago manual (Yape/Plin/Bank/Cash).</summary>
+    /// <summary>Registra un pago manual (Yape/Plin/Bank).</summary>
     Task<ServicePayment> Handle(PayBookingCommand command);
 
-    /// <summary>Registra un pago Izipay exitoso (lo llama IzipayController).</summary>
-    Task<ServicePayment> Handle(ConfirmIzipayPaymentCommand command);
-
-    /// <summary>Registra un pago PayPal exitoso (lo llama PayPalController tras capture).</summary>
-    Task<ServicePayment> Handle(ConfirmPayPalPaymentCommand command);
+    /// <summary>
+    ///     Registra un pago de Mercado Pago aprobado. Lo llama el controller del
+    ///     adapter tras consultar el estado del payment_id por la API de MP.
+    /// </summary>
+    Task<ServicePayment> Handle(ConfirmMercadoPagoPaymentCommand command);
 
     /// <summary>Marca todos los payments Pending del worker como Completed.</summary>
     Task<int> Handle(RequestPayoutCommand command);
@@ -35,7 +35,7 @@ public record WorkerBalanceResult(
     decimal TotalEarnings,     // Suma del WorkerEarning de TODOS los payments del worker (todos canales).
     decimal PlatformFeeTotal,  // Suma del PlatformFee.
     decimal NetEarnings,       // = TotalEarnings (las "netas" son lo que se le acreditó tras la comisión).
-    decimal PendingPayout,     // Suma del WorkerEarning de payments con PayoutStatus = Pending (Izipay no cobrado).
+    decimal PendingPayout,     // Suma del WorkerEarning de payments con PayoutStatus = Pending (pendientes de cobro).
     int     PendingPayoutCount,// Cantidad de payments Pending (para el "De N servicios pagados").
     int     CompletedServices  // Cantidad total de payments (servicios efectivamente pagados).
 );

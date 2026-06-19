@@ -1,27 +1,30 @@
 namespace InCleanHome.API.Payments.Domain.Model.Commands;
 
 /// <summary>
-/// Comandos del agregado ServicePayment.
-///
-/// PayBookingCommand: registra que el cliente pagó el booking por un canal manual
-/// (yape / plin / bank_transfer / cash). NO se usa para izipay_card / paypal —
-/// esos casos se disparan desde sus respectivos controllers de pasarela.
-///
-/// ConfirmIzipayPaymentCommand: registra que un pago Izipay sandbox fue exitoso.
-/// Se llama internamente desde IzipayController.
-///
-/// ConfirmPayPalPaymentCommand: registra que un pago PayPal fue capturado.
-/// Se llama internamente desde PayPalController tras capture-order exitoso.
-///
-/// RequestPayoutCommand: el worker pide el cobro de todos sus payments con
-/// PayoutStatus = Pending. Marca esos payments como Completed.
+///     Comandos del agregado ServicePayment.
 /// </summary>
+/// <remarks>
+///     <para>
+///     <c>PayBookingCommand</c>: registra que el cliente pagó el booking por un
+///     canal manual (yape / plin / bank_transfer). El cliente confirma en la app
+///     que ya pagó por fuera y la trabajadora luego pide cobro.
+///     </para>
+///     <para>
+///     <c>ConfirmMercadoPagoPaymentCommand</c>: registra que un pago vía
+///     Mercado Pago Perú fue aprobado. Se llama internamente desde el controller
+///     del adapter tras consultar el estado del payment_id devuelto por MP.
+///     </para>
+///     <para>
+///     <c>RequestPayoutCommand</c>: la worker pide el cobro de todos sus
+///     payments con <c>PayoutStatus = Pending</c>; los marca como Completed.
+///     </para>
+/// </remarks>
 public record PayBookingCommand(int BookingId, int ClientId, string Channel);
 
-public record ConfirmIzipayPaymentCommand(
-    int BookingId, int ClientId, string IzipayOrderId, string? IzipayTransactionId);
-
-public record ConfirmPayPalPaymentCommand(
-    int BookingId, int ClientId, string PayPalOrderId, string? PayPalCaptureId);
+public record ConfirmMercadoPagoPaymentCommand(
+    int BookingId,
+    int ClientId,
+    string MercadoPagoPaymentId,
+    string? MercadoPagoPreferenceId);
 
 public record RequestPayoutCommand(int WorkerId);
