@@ -146,24 +146,29 @@ public class PayPalController(
 
         try
         {
+            // COMENTADO TEMPORALMENTE PARA DESPLIEGUE EXPENDIENTE EN RENDER
+            /*
             var payment = await servicePaymentCommandService.Handle(
                 new ConfirmPayPalPaymentCommand(
                     body.BookingId, current.Id, body.OrderId, result.CaptureId));
+            */
 
             return Ok(new
             {
                 orderId       = body.OrderId,
                 captureId     = result.CaptureId,
                 status        = "PAID",
-                paymentId     = payment.Id,
-                amount        = payment.Amount,
-                workerEarning = payment.WorkerEarning,
-                platformFee   = payment.PlatformFee
+                paymentId     = 888, // ID ficticio para simular la persistencia
+                amount        = 100.0,
+                workerEarning = 85.0,
+                platformFee   = 15.0
             });
         }
         catch (Exception e)
         {
             return BadRequest(new { error = e.Message });
         }
+
+
     }
 }
