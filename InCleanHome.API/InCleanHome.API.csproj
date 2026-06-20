@@ -34,6 +34,7 @@
         <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.11.0" />
         <!-- Twilio Conversations -->
         <PackageReference Include="Twilio" Version="7.14.9" />
+        <PackageReference Include="FirebaseAdmin" Version="xxxx" />
     </ItemGroup>
 
     <ItemGroup>
